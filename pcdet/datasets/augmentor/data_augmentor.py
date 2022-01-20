@@ -13,14 +13,19 @@ class DataAugmentor(object):
         self.logger = logger
         
         self.data_augmentor_queue = []
+        # 读取数据增强的功能选项配置`AUG_CONFIG_LIST`
         aug_config_list = augmentor_configs if isinstance(augmentor_configs, list) \
             else augmentor_configs.AUG_CONFIG_LIST
         
+        # 每个`AUG_CONFIG_LIST`中的功能选项
         for cur_cfg in aug_config_list:
             if not isinstance(augmentor_configs, list):
+                # 功能选项在失能列表内就跳过
                 if cur_cfg.NAME in augmentor_configs.DISABLE_AUG_LIST:
                     continue
+            # 读取功能选项卡中的`NAME`，调用对应成员处理函数并绑定当前选项卡`配置文件字典`
             cur_augmentor = getattr(self, cur_cfg.NAME)(config=cur_cfg)
+            # 把binding配置字典的处理函数传入增强处理队列。
             self.data_augmentor_queue.append(cur_augmentor)
     
     def gt_sampling(self, config=None):
@@ -203,25 +208,76 @@ class DataAugmentor(object):
         data_dict['points'] = points
         return data_dict
     
-    def random_local_pyramid_aug(self, data_dict=None, config=None):
-        """
-        Refer to the paper: 
-            SE-SSD: Self-Ensembling Single-Stage Object Detector From Point Cloud
-        """
+    def random_local_pyramid_dropout(self, data_dict=None, config=None):
         if data_dict is None:
-            return partial(self.random_local_pyramid_aug, config=config)
+            return partial(self.random_local_pyramid_dropout, config=config)
         
+        for_all_cls = 'all' in config.keys()
+        cls_list = np.unique(data_dict['gt_names']) if for_all_cls else config.keys()
+        
+        for cls in cls_list:
+            prob = float(config['all' if for_all_cls else cls]['PROB'])
+            cls_mask = data_dict['gt_names'] == cls
+            _, data_dict['points'] = augmentor_utils.local_pyramid_dropout(data_dict['gt_boxes'][cls_mask],
+                                                                           data_dict['points'],
+                                                                           prob)
+        return data_dict
+    
+    def random_local_pyramid_sparsify(self, data_dict, config):
+        if data_dict is None:
+            return partial(self.random_local_pyramid_sparsify, config=config)
+        
+        for_all_cls = 'all' in config.keys()
+        cls_list = np.unique(data_dict['gt_names']) if for_all_cls else config.keys()
+        
+        for cls in cls_list:
+            key = 'all' if for_all_cls else cls
+            prob, max_num = float(config[key]['PROB']), int(config[key]['MAX_NUM'])
+            cls_mask = data_dict['gt_names'] == cls
+            _, data_dict['points'] = augmentor_utils.local_pyramid_sparsify(data_dict['gt_boxes'][cls_mask],
+                                                                            data_dict['points'],
+                                                                            prob, max_num)
+        
+        return data_dict
+    
+    def random_local_pyramid_swap(self, data_dict, config):
+        if data_dict is None:
+            return partial(self.random_local_pyramid_swap, config=config)
+        
+        for_all = 'all' in config.keys()
+        cls_list = np.unique(data_dict['gt_names']) if for_all else config.keys()
+        for cls in cls_list:
+            key = 'all' if for_all else cls
+            prob, max_num = float(config[key]['PROB']), int(config[key]['MAX_NUM'])
+            cls_mask = cls == data_dict['gt_names']
+            _, data_dict['points'] = augmentor_utils.local_pyramid_swap(data_dict['gt_boxes'][cls_mask],
+                                                                        data_dict['points'],
+                                                                        prob, max_num)
+        return data_dict
+    
+    def random_local_pyramid_change(self, data_dict=None, config=None):
+        if data_dict is None:
+            return partial(self.random_local_pyramid_change, config=config)
+        
+        data_dict = self.random_local_pyramid_dropout(data_dict, config['DROPOUT'])
+        data_dict = self.random_local_pyramid_sparsify(data_dict, config['SPARSIFY'])
+        data_dict = self.random_local_pyramid_swap(data_dict, config['SWAP'])
+        
+        return data_dict
+    
+    def random_make_slope_in_scene(self, data_dict=None, config=None):
+        if data_dict is None:
+            return partial(self.random_make_slope_in_scene, config=config)
+        
+        dist_mean, dist_var = config['SLOPE_DISTANCE']['MEAN'], config['SLOPE_DISTANCE']['VAR']
+        angle_mean, angle_var = np.deg2rad([config['SLOPE_ANGLE']['MEAN'], config['SLOPE_ANGLE']['VAR']])
+        prob = config['PROB']
+        choice = np.random.random()
         gt_boxes, points = data_dict['gt_boxes'], data_dict['points']
-        
-        gt_boxes, points, pyramids = augmentor_utils.local_pyramid_dropout(gt_boxes, points, config['DROP_PROB'])
-        gt_boxes, points, pyramids = augmentor_utils.local_pyramid_sparsify(gt_boxes, points,
-                                                                            config['SPARSIFY_PROB'],
-                                                                            config['SPARSIFY_MAX_NUM'],
-                                                                            pyramids)
-        gt_boxes, points = augmentor_utils.local_pyramid_swap(gt_boxes, points,
-                                                                 config['SWAP_PROB'],
-                                                                 config['SWAP_MAX_NUM'],
-                                                                 pyramids)
+        if choice < prob:
+            gt_boxes, points = augmentor_utils.point_cloud_random_make_slope(
+                gt_boxes, points, params=(dist_mean, dist_var, angle_mean, angle_var)
+            )
         data_dict['gt_boxes'] = gt_boxes
         data_dict['points'] = points
         return data_dict
@@ -234,7 +290,7 @@ class DataAugmentor(object):
                 gt_boxes: optional, (N, 7) [x, y, z, dx, dy, dz, heading]
                 gt_names: optional, (N), string
                 ...
-
+    
         Returns:
         """
         for cur_augmentor in self.data_augmentor_queue:

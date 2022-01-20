@@ -32,7 +32,7 @@ DATA_AUGMENTOR:
           NUM_POINT_FEATURES: 4
           DATABASE_WITH_FAKELIDAR: False
           REMOVE_EXTRA_WIDTH: [0.0, 0.0, 0.0]
-          LIMIT_WHOLE_SCENE: True
+          LIMIT_WHOLE_SCENE: True  # 限制场景物体个数为SAMPLE_GROUPS
 
         - NAME: random_world_flip
           ALONG_AXIS_LIST: ['x']
@@ -52,8 +52,8 @@ POINT_FEATURE_ENCODING: {
 
 
 DATA_PROCESSOR:
-    - NAME: mask_points_and_boxes_outside_range
-      REMOVE_OUTSIDE_BOXES: True
+    - NAME: mask_points_and_boxes_outside_range  # 移除[x,y]范围外的点云, 不考虑z范围
+      REMOVE_OUTSIDE_BOXES: True  # 在训练时候移除范围外的gt_box
 
     - NAME: shuffle_points
       SHUFFLE_ENABLED: {

@@ -68,7 +68,7 @@ MODEL:
             POOL_EXTRA_WIDTH: [0.0, 0.0, 0.0]
             NUM_SAMPLED_POINTS: 512
             DEPTH_NORMALIZER: 70.0
-
+        # 这里的 128 应该保持与 PointNet2BackBone最后一层FP中的最后一层mlp的维度相同
         XYZ_UP_LAYER: [128, 128]
         CLS_FC: [256, 256]
         REG_FC: [256, 256]
@@ -81,9 +81,9 @@ MODEL:
             NSAMPLE: [16, 16, 16]
             MLPS: [[128, 128, 128],
                    [128, 128, 256],
-                   [256, 256, 512]]
+                   [256, 256, 512]] # 最终每个roi经过sa把pool的(num_sampled_pts,c)抽象为(1,512)特征
 
-        NMS_CONFIG:
+        NMS_CONFIG: # 用于从第一步每个点预测的box中提取proposal
             TRAIN:
                 NMS_TYPE: nms_gpu
                 MULTI_CLASSES_NMS: False
@@ -99,7 +99,7 @@ MODEL:
 
         TARGET_CONFIG:
             BOX_CODER: ResidualCoder
-            ROI_PER_IMAGE: 128
+            ROI_PER_IMAGE: 128 # 从nms得出的proposal中采样128个作为roi
             FG_RATIO: 0.5
 
             SAMPLE_ROI_BY_EACH_CLASS: True

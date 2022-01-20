@@ -7,6 +7,8 @@ from ...ops.pointnet2.pointnet2_stack import pointnet2_utils as pointnet2_utils_
 
 
 class PointNet2MSG(nn.Module):
+    # 一个MSG的PointNet2结构，n层SA(MSG)进行下采样，然后n层FP进行上采样，然后前后跳层链接
+    # 妥妥的point-based-unet结构啊!!!以前没发现
     def __init__(self, model_cfg, input_channels, **kwargs):
         super().__init__()
         self.model_cfg = model_cfg
@@ -16,13 +18,16 @@ class PointNet2MSG(nn.Module):
 
         self.num_points_each_layer = []
         skip_channel_list = [input_channels - 3]
+        # 设置多层SA_MSG
         for k in range(self.model_cfg.SA_CONFIG.NPOINTS.__len__()):
+            # 每层SA为MSG内每个PointNet2单元的MLP设置输入层来符合输入特征通道。
+            # 每层SA把MSG内每个PointNet2单元的MLP输出累计作为输出通道，因为最终要合并每个PointNet2单元的输出。
             mlps = self.model_cfg.SA_CONFIG.MLPS[k].copy()
             channel_out = 0
             for idx in range(mlps.__len__()):
                 mlps[idx] = [channel_in] + mlps[idx]
                 channel_out += mlps[idx][-1]
-
+            # 构建SA-MSG,熟悉的内容，就是ball_query和mlp层的构建
             self.SA_modules.append(
                 pointnet2_modules.PointnetSAModuleMSG(
                     npoint=self.model_cfg.SA_CONFIG.NPOINTS[k],
@@ -32,19 +37,22 @@ class PointNet2MSG(nn.Module):
                     use_xyz=self.model_cfg.SA_CONFIG.get('USE_XYZ', True),
                 )
             )
+            # skip_channel可以看pointnet2的图他前面n层SA和后面n层FP是有skip_connect的
             skip_channel_list.append(channel_out)
             channel_in = channel_out
 
         self.FP_modules = nn.ModuleList()
-
+        # 遍历每1层PN特征传播层
+        # k越大表示越靠近中间层，k=0层是最后一层FP。
         for k in range(self.model_cfg.FP_MLPS.__len__()):
             pre_channel = self.model_cfg.FP_MLPS[k + 1][-1] if k + 1 < len(self.model_cfg.FP_MLPS) else channel_out
             self.FP_modules.append(
                 pointnet2_modules.PointnetFPModule(
+                    # 根据跳层输入+前层输入来确定mlp的输入层维度
                     mlp=[pre_channel + skip_channel_list[k]] + self.model_cfg.FP_MLPS[k]
                 )
             )
-
+        # 最后一层FP的最后一层mlp为本SA的输出特征通道
         self.num_point_features = self.model_cfg.FP_MLPS[0][-1]
 
     def break_up_pc(self, pc):
@@ -84,7 +92,9 @@ class PointNet2MSG(nn.Module):
             l_features.append(li_features)
 
         for i in range(-1, -(len(self.FP_modules) + 1), -1):
+            # 通过本层特征和本层采样点，上采样得到后一层的采样点和它的特征
             l_features[i - 1] = self.FP_modules[i](
+                # l_xyz[i - 1]后一层FP中的点，l_xyz[i]本层FP中的点
                 l_xyz[i - 1], l_xyz[i], l_features[i - 1], l_features[i]
             )  # (B, C, N)
 

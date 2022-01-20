@@ -58,7 +58,7 @@ DATA_CONFIG:
               ALONG_AXIS_LIST: ['x', 'y', 'z']
 
             - NAME: random_local_translation
-              LOCAL_TRANSLATION_RANGE: [0.95, 1.05]
+              LOCAL_TRANSLATION_RANGE: [0.95, 1.05] # 错误，源码内是加法而不是乘法，可能应该写成[-0.1, 0.1]
               ALONG_AXIS_LIST: ['x', 'y', 'z']
 
             - NAME: random_world_frustum_dropout

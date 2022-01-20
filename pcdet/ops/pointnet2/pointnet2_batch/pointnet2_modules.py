@@ -57,7 +57,7 @@ class _PointnetSAModuleBase(nn.Module):
 
 class PointnetSAModuleMSG(_PointnetSAModuleBase):
     """Pointnet set abstraction layer with multiscale grouping"""
-
+    
     def __init__(self, *, npoint: int, radii: List[float], nsamples: List[int], mlps: List[List[int]], bn: bool = True,
                  use_xyz: bool = True, pool_method='max_pool'):
         """
@@ -121,7 +121,7 @@ class PointnetSAModule(PointnetSAModuleMSG):
 
 class PointnetFPModule(nn.Module):
     r"""Propigates the features of one set to another"""
-
+    # 用插值上采样点 + mlp进行特征维度整理
     def __init__(self, *, mlp: List[int], bn: bool = True):
         """
         :param mlp: list of int
@@ -150,11 +150,12 @@ class PointnetFPModule(nn.Module):
             new_features: (B, mlp[-1], n) tensor of the features of the unknown features
         """
         if known is not None:
+            # (B,n,3) 每个输出点对应的3个最近上采样点
             dist, idx = pointnet2_utils.three_nn(unknown, known)
             dist_recip = 1.0 / (dist + 1e-8)
             norm = torch.sum(dist_recip, dim=2, keepdim=True)
             weight = dist_recip / norm
-
+            
             interpolated_feats = pointnet2_utils.three_interpolate(known_feats, idx, weight)
         else:
             interpolated_feats = known_feats.expand(*known_feats.size()[0:2], unknown.size(1))

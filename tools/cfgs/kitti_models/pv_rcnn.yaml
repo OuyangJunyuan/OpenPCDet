@@ -143,11 +143,11 @@ MODEL:
                 POOL_RADIUS: [2.4, 4.8]
                 NSAMPLE: [16, 32]
 
-    POINT_HEAD:
+    POINT_HEAD: # 分割点的?
         NAME: PointHeadSimple
         CLS_FC: [256, 256]
         CLASS_AGNOSTIC: True
-        USE_POINT_FEATURES_BEFORE_FUSION: True
+        USE_POINT_FEATURES_BEFORE_FUSION: True  # 是否使用：关键点从从多个来源中SA到的特征串联经过MLPs融合的特征还是串联的特征
         TARGET_CONFIG:
             GT_EXTRA_WIDTH: [0.2, 0.2, 0.2]
         LOSS_CONFIG:
@@ -156,7 +156,7 @@ MODEL:
                 'point_cls_weight': 1.0,
             }
 
-    ROI_HEAD:
+    ROI_HEAD: # 二阶段
         NAME: PVRCNNHead
         CLASS_AGNOSTIC: True
 

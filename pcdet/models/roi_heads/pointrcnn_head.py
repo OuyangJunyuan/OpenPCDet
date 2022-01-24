@@ -14,7 +14,7 @@ class PointRCNNHead(RoIHeadTemplate):
         use_bn = self.model_cfg.USE_BN
         self.SA_modules = nn.ModuleList()
         channel_in = input_channels
-
+        
         self.num_prefix_channels = 3 + 2  # xyz + point_scores + point_depth
         xyz_mlps = [self.num_prefix_channels] + self.model_cfg.XYZ_UP_LAYER
         shared_mlps = []

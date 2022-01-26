@@ -35,9 +35,20 @@ MODEL:
 
         SHARED_CONV_CHANNEL: 64
         USE_BIAS_BEFORE_NORM: True
-        NUM_HM_CONV: 2
+        NUM_HM_CONV: 2 # hm -> heatmap
         SEPARATE_HEAD_CFG:
             HEAD_ORDER: ['center', 'center_z', 'dim', 'rot']
+            # 这里把原作者的centerpoint-kitti
+            # spatial_features_2d -> conv_box(input_channels, 直接写死成输入64输出8通道:l,w,h, center_x,y ,z rot_sin,cos)
+            #                     -> conv_cls(input_channels, num_class)
+            # 修改成方便配置的，便于以后加维度: 但是为啥要拆成每个head都要多层卷积呢，效果好？
+            # spatial_features_2d -> shared_conv(input_channels,SHARED_CONV_CHANNEL:64) -> heatmap = num_conv*conv2d(SHARED_CONV_CHANNEL)+Conv2d(SHARED_CONV_CHANNEL, num_class)
+            #                                                                           -> SeparateHead_center = num_conv*conv2d(SHARED_CONV_CHANNEL)+Conv2d(input_channels, 2)
+            #                                                                           -> SeparateHead_center_z = num_conv*conv2d(SHARED_CONV_CHANNEL)+Conv2d(input_channels, 1)
+            #                                                                           -> SeparateHead_center_dim = num_conv*conv2d(SHARED_CONV_CHANNEL)+Conv2d(input_channels, 3)
+            #                                                                           -> SeparateHead_center_rot = num_conv*conv2d(SHARED_CONV_CHANNEL)+Conv2d(input_channels, 2)
+            #                                                                           -> SeparateHead_center_vel = ...
+            #                                                                           ...
             HEAD_DICT: {
                 'center': {'out_channels': 2, 'num_conv': 2},
                 'center_z': {'out_channels': 1, 'num_conv': 2},

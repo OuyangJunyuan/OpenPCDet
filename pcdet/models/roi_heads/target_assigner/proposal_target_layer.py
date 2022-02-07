@@ -81,7 +81,7 @@ class ProposalTargetLayer(nn.Module):
 
         code_size = rois.shape[-1]
         batch_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size)
-        batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size + 1)
+        batch_gt_of_rois = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE, code_size + 1)  # 多1是gt的cls
         batch_roi_ious = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
         batch_roi_scores = rois.new_zeros(batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE)
         batch_roi_labels = rois.new_zeros((batch_size, self.roi_sampler_cfg.ROI_PER_IMAGE), dtype=torch.long)
@@ -89,6 +89,7 @@ class ProposalTargetLayer(nn.Module):
         for index in range(batch_size):
             cur_roi, cur_gt, cur_roi_labels, cur_roi_scores = \
                 rois[index], gt_boxes[index], roi_labels[index], roi_scores[index]
+            # k 用于计算当前真是gt数，因为batch_collection的时候会把batch内所有gt补齐成(补0)和最多相同个数。
             k = cur_gt.__len__() - 1
             while k > 0 and cur_gt[k].sum() == 0:
                 k -= 1
@@ -96,8 +97,9 @@ class ProposalTargetLayer(nn.Module):
             cur_gt = cur_gt.new_zeros((1, cur_gt.shape[1])) if len(cur_gt) == 0 else cur_gt
 
             if self.roi_sampler_cfg.get('SAMPLE_ROI_BY_EACH_CLASS', False):
+                # roi与其(同类别的)最匹配的gt和iou
                 max_overlaps, gt_assignment = self.get_max_iou_with_same_class(
-                    rois=cur_roi, roi_labels=cur_roi_labels,
+                    rois=cur_roi[:, 0:7], roi_labels=cur_roi_labels,  # TODO: @ouyjy 改成非0:7
                     gt_boxes=cur_gt[:, 0:7], gt_labels=cur_gt[:, -1].long()
                 )
             else:
@@ -122,7 +124,7 @@ class ProposalTargetLayer(nn.Module):
         fg_inds = ((max_overlaps >= fg_thresh)).nonzero().view(-1)
         easy_bg_inds = ((max_overlaps < self.roi_sampler_cfg.CLS_BG_THRESH_LO)).nonzero().view(-1)
         hard_bg_inds = ((max_overlaps < self.roi_sampler_cfg.REG_FG_THRESH) &
-                (max_overlaps >= self.roi_sampler_cfg.CLS_BG_THRESH_LO)).nonzero().view(-1)
+                        (max_overlaps >= self.roi_sampler_cfg.CLS_BG_THRESH_LO)).nonzero().view(-1)
 
         fg_num_rois = fg_inds.numel()
         bg_num_rois = hard_bg_inds.numel() + easy_bg_inds.numel()
@@ -211,7 +213,7 @@ class ProposalTargetLayer(nn.Module):
         """
         max_overlaps = rois.new_zeros(rois.shape[0])
         gt_assignment = roi_labels.new_zeros(roi_labels.shape[0])
-
+        # 遍历当前存在的gt类别
         for k in range(gt_labels.min().item(), gt_labels.max().item() + 1):
             roi_mask = (roi_labels == k)
             gt_mask = (gt_labels == k)

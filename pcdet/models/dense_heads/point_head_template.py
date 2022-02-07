@@ -55,7 +55,7 @@ class PointHeadTemplate(nn.Module):
             gt_boxes: (B, M, 8)
             extend_gt_boxes: [B, M, 8]
             ret_box_labels:
-            ret_part_labels:
+            ret_part_labels: code for PartA^2
             set_ignore_flag:
             use_ball_constraint:
             central_radius:
@@ -66,14 +66,14 @@ class PointHeadTemplate(nn.Module):
 
         """
         assert len(points.shape) == 2 and points.shape[1] == 4, 'points.shape=%s' % str(points.shape)
-        assert len(gt_boxes.shape) == 3 and gt_boxes.shape[2] == 8, 'gt_boxes.shape=%s' % str(gt_boxes.shape)
-        assert extend_gt_boxes is None or len(extend_gt_boxes.shape) == 3 and extend_gt_boxes.shape[2] == 8, \
+        assert len(gt_boxes.shape) == 3 and gt_boxes.shape[2] == 10, 'gt_boxes.shape=%s' % str(gt_boxes.shape)
+        assert extend_gt_boxes is None or len(extend_gt_boxes.shape) == 3 and extend_gt_boxes.shape[2] == 10, \
             'extend_gt_boxes.shape=%s' % str(extend_gt_boxes.shape)
         assert set_ignore_flag != use_ball_constraint, 'Choose one only!'
         batch_size = gt_boxes.shape[0]
         bs_idx = points[:, 0]
         point_cls_labels = points.new_zeros(points.shape[0]).long()
-        point_box_labels = gt_boxes.new_zeros((points.shape[0], 8)) if ret_box_labels else None
+        point_box_labels = gt_boxes.new_zeros((points.shape[0], self.box_coder.code_size)) if ret_box_labels else None
         point_part_labels = gt_boxes.new_zeros((points.shape[0], 3)) if ret_part_labels else None
         for k in range(batch_size):
             bs_mask = (bs_idx == k)
@@ -85,7 +85,7 @@ class PointHeadTemplate(nn.Module):
             box_fg_flag = (box_idxs_of_pts >= 0)
             if set_ignore_flag:
                 extend_box_idxs_of_pts = roiaware_pool3d_utils.points_in_boxes_gpu(
-                    points_single.unsqueeze(dim=0), extend_gt_boxes[k:k+1, :, 0:7].contiguous()
+                    points_single.unsqueeze(dim=0), extend_gt_boxes[k:k + 1, :, 0:7].contiguous()
                 ).long().squeeze(dim=0)
                 fg_flag = box_fg_flag
                 ignore_flag = fg_flag ^ (extend_box_idxs_of_pts >= 0)
@@ -102,8 +102,9 @@ class PointHeadTemplate(nn.Module):
             point_cls_labels_single[fg_flag] = 1 if self.num_class == 1 else gt_box_of_fg_points[:, -1].long()
             point_cls_labels[bs_mask] = point_cls_labels_single
 
+            # 需要返回box的回归真值 且 处于box内的点个数大于0
             if ret_box_labels and gt_box_of_fg_points.shape[0] > 0:
-                point_box_labels_single = point_box_labels.new_zeros((bs_mask.sum(), 8))
+                point_box_labels_single = point_box_labels.new_zeros((bs_mask.sum(), self.box_coder.code_size))
                 fg_point_box_labels = self.box_coder.encode_torch(
                     gt_boxes=gt_box_of_fg_points[:, :-1], points=points_single[fg_flag],
                     gt_classes=gt_box_of_fg_points[:, -1].long()

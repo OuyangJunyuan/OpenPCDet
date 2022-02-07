@@ -14,7 +14,8 @@ class PointRCNNHead(RoIHeadTemplate):
         use_bn = self.model_cfg.USE_BN
         self.SA_modules = nn.ModuleList()
         channel_in = input_channels
-        
+
+        # 构建共享mlp
         self.num_prefix_channels = 3 + 2  # xyz + point_scores + point_depth
         xyz_mlps = [self.num_prefix_channels] + self.model_cfg.XYZ_UP_LAYER
         shared_mlps = []
@@ -25,12 +26,13 @@ class PointRCNNHead(RoIHeadTemplate):
             shared_mlps.append(nn.ReLU())
         self.xyz_up_layer = nn.Sequential(*shared_mlps)
 
+        # 构建 global/local spatial 融合mlp
         c_out = self.model_cfg.XYZ_UP_LAYER[-1]
         self.merge_down_layer = nn.Sequential(
             nn.Conv2d(c_out * 2, c_out, kernel_size=1, bias=not use_bn),
             *[nn.BatchNorm2d(c_out), nn.ReLU()] if use_bn else [nn.ReLU()]
         )
-
+        # 构建SA
         for k in range(self.model_cfg.SA_CONFIG.NPOINTS.__len__()):
             mlps = [channel_in] + self.model_cfg.SA_CONFIG.MLPS[k]
 
@@ -47,9 +49,14 @@ class PointRCNNHead(RoIHeadTemplate):
             )
             channel_in = mlps[-1]
 
+        # cls预测层
         self.cls_layers = self.make_fc_layers(
-            input_channels=channel_in, output_channels=self.num_class, fc_list=self.model_cfg.CLS_FC
+            input_channels=channel_in,
+            output_channels=self.num_class,
+            fc_list=self.model_cfg.CLS_FC
         )
+
+        # box回归层
         self.reg_layers = self.make_fc_layers(
             input_channels=channel_in,
             output_channels=self.box_coder.code_size * self.num_class,
@@ -115,7 +122,7 @@ class PointRCNNHead(RoIHeadTemplate):
 
         with torch.no_grad():
             pooled_features, pooled_empty_flag = self.roipoint_pool3d_layer(
-                batch_points, batch_point_features, rois
+                batch_points, batch_point_features, rois[..., :7]
             )  # pooled_features: (B, num_rois, num_sampled_points, 3 + C), pooled_empty_flag: (B, num_rois)
 
             # canonical transformation
@@ -123,8 +130,8 @@ class PointRCNNHead(RoIHeadTemplate):
             pooled_features[:, :, :, 0:3] -= roi_center.unsqueeze(dim=2)
 
             pooled_features = pooled_features.view(-1, pooled_features.shape[-2], pooled_features.shape[-1])
-            pooled_features[:, :, 0:3] = common_utils.rotate_points_along_z(
-                pooled_features[:, :, 0:3], -rois.view(-1, rois.shape[-1])[:, 6]
+            pooled_features[:, :, 0:3] = common_utils.rotate_points(
+                pooled_features[:, :, 0:3], -rois.view(-1, rois.shape[-1])[:, 6:9]
             )
             pooled_features[pooled_empty_flag.view(-1) > 0] = 0
         return pooled_features

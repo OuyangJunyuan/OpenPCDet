@@ -41,7 +41,7 @@ def point_cloud_random_make_slope(points, rotate_point=None, rotate_angle=None):
         return (np.random.random(n) - 0.5) * 2
     
     if rotate_point is None:
-        mean, var = np.array([25, 0]), np.array([10, np.pi / 10000])
+        mean, var = np.array([15, 0]), np.array([10, np.pi / 10000])
         polar_pos = mean + random(2) * var
         rotate_point = np.array([polar_pos[0] * np.cos(polar_pos[1]), polar_pos[0] * np.sin(polar_pos[1]), 0])
     
@@ -60,13 +60,13 @@ def point_cloud_random_make_slope(points, rotate_point=None, rotate_angle=None):
     print(rotate_point, rotate_angle)
     k = rotate_angle[1] / (rotate_angle[0] + 1e-6)
     sign = np.sign(k * (0 - x0) + y0 - 0)
-    in_plane_mask = np.sign(k * (points[:, 0] - x0) + y0 - points[:, 1]) == sign
-    slope_points = points[np.logical_not(in_plane_mask)]
+    in_plane_mask = np.sign(k * (points[:, 0] - x0) + y0 - points[:, 1]) != sign
+    slope_points = points[in_plane_mask]
     slope_points[:, 0:3] -= rotate_point
     rot = Rotation.from_rotvec(rotate_angle).as_matrix()
     slope_points[:, 0:3] = (slope_points[:, 0:3].dot(rot.T))
     slope_points[:, 0:3] += rotate_point
-    points[np.logical_not(in_plane_mask)] = slope_points
+    points[in_plane_mask] = slope_points
     return rotate_point, rotate_angle, in_plane_mask, points
 
 
@@ -78,7 +78,7 @@ def main():
         root_path=None,
         training=True
     )
-    scene = 1000
+    scene = 1110
     file_name = '%06d' % scene
     print(file_name)
     points = aug_dataset.get_lidar(file_name)  # 11

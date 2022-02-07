@@ -63,7 +63,7 @@ class RoIHeadTemplate(nn.Module):
         """
         if batch_dict.get('rois', None) is not None:
             return batch_dict
-            
+
         batch_size = batch_dict['batch_size']
         batch_box_preds = batch_dict['batch_box_preds']
         batch_cls_preds = batch_dict['batch_cls_preds']
@@ -86,7 +86,7 @@ class RoIHeadTemplate(nn.Module):
             if nms_config.MULTI_CLASSES_NMS:
                 raise NotImplementedError
             else:
-                selected, selected_scores = class_agnostic_nms(
+                selected, selected_scores = class_agnostic_nms(  # TODO: @ouyjy 改成非0:7, rpy的
                     box_scores=cur_roi_scores, box_preds=box_preds, nms_config=nms_config
                 )
 
@@ -112,24 +112,25 @@ class RoIHeadTemplate(nn.Module):
 
         # canonical transformation
         roi_center = rois[:, :, 0:3]
-        roi_ry = rois[:, :, 6] % (2 * np.pi)
+        roi_rotation = rois[:, :, 6:9] % (2 * np.pi)
+
         gt_of_rois[:, :, 0:3] = gt_of_rois[:, :, 0:3] - roi_center
-        gt_of_rois[:, :, 6] = gt_of_rois[:, :, 6] - roi_ry
+        gt_of_rois[:, :, 6:9] = gt_of_rois[:, :, 6:9] - roi_rotation
 
         # transfer LiDAR coords to local coords
-        gt_of_rois = common_utils.rotate_points_along_z(
-            points=gt_of_rois.view(-1, 1, gt_of_rois.shape[-1]), angle=-roi_ry.view(-1)
+        gt_of_rois = common_utils.rotate_points(
+            points=gt_of_rois.view(-1, 1, gt_of_rois.shape[-1]), angle=-roi_rotation.view(-1, 3)
         ).view(batch_size, -1, gt_of_rois.shape[-1])
 
         # flip orientation if rois have opposite orientation
-        heading_label = gt_of_rois[:, :, 6] % (2 * np.pi)  # 0 ~ 2pi
-        opposite_flag = (heading_label > np.pi * 0.5) & (heading_label < np.pi * 1.5)
+        heading_label = gt_of_rois[:, :, 6:9] % (2 * np.pi)  # delta_angle:0 ~ 2pi
+        opposite_flag = (heading_label > np.pi * 0.5) & (heading_label < np.pi * 1.5)  # gt和roi方向相反: 0.5pi~1.5pi
         heading_label[opposite_flag] = (heading_label[opposite_flag] + np.pi) % (2 * np.pi)  # (0 ~ pi/2, 3pi/2 ~ 2pi)
-        flag = heading_label > np.pi
+        flag = heading_label > np.pi  # 为了让(0~2pi) -> (-pi/2, pi/2)
         heading_label[flag] = heading_label[flag] - np.pi * 2  # (-pi/2, pi/2)
         heading_label = torch.clamp(heading_label, min=-np.pi / 2, max=np.pi / 2)
 
-        gt_of_rois[:, :, 6] = heading_label
+        gt_of_rois[:, :, 6:9] = heading_label
         targets_dict['gt_of_rois'] = gt_of_rois
         return targets_dict
 
@@ -160,7 +161,8 @@ class RoIHeadTemplate(nn.Module):
                 rcnn_reg.view(rcnn_batch_size, -1).unsqueeze(dim=0),
                 reg_targets.unsqueeze(dim=0),
             )  # [B, M, 7]
-            rcnn_loss_reg = (rcnn_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(fg_sum, 1)
+            rcnn_loss_reg = (rcnn_loss_reg.view(rcnn_batch_size, -1) * fg_mask.unsqueeze(dim=-1).float()).sum() / max(
+                fg_sum, 1)
             rcnn_loss_reg = rcnn_loss_reg * loss_cfgs.LOSS_WEIGHTS['rcnn_reg_weight']
             tb_dict['rcnn_loss_reg'] = rcnn_loss_reg.item()
 
@@ -203,7 +205,8 @@ class RoIHeadTemplate(nn.Module):
         rcnn_cls_labels = forward_ret_dict['rcnn_cls_labels'].view(-1)
         if loss_cfgs.CLS_LOSS == 'BinaryCrossEntropy':
             rcnn_cls_flat = rcnn_cls.view(-1)
-            batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat), rcnn_cls_labels.float(), reduction='none')
+            batch_loss_cls = F.binary_cross_entropy(torch.sigmoid(rcnn_cls_flat), rcnn_cls_labels.float(),
+                                                    reduction='none')
             cls_valid_mask = (rcnn_cls_labels >= 0).float()
             rcnn_loss_cls = (batch_loss_cls * cls_valid_mask).sum() / torch.clamp(cls_valid_mask.sum(), min=1.0)
         elif loss_cfgs.CLS_LOSS == 'CrossEntropy':
@@ -246,15 +249,28 @@ class RoIHeadTemplate(nn.Module):
         batch_cls_preds = cls_preds.view(batch_size, -1, cls_preds.shape[-1])
         batch_box_preds = box_preds.view(batch_size, -1, code_size)
 
-        roi_ry = rois[:, :, 6].view(-1)
+        # roi_ry = rois[:, :, 6].view(-1)
+        # roi_xyz = rois[:, :, 0:3].view(-1, 3)
+        # local_rois = rois.clone().detach()
+        # local_rois[:, :, 0:3] = 0
+        #
+        # batch_box_preds = self.box_coder.decode_torch(batch_box_preds, local_rois).view(-1, code_size)
+        #
+        # batch_box_preds = common_utils.rotate_points_along_z(
+        #     batch_box_preds.unsqueeze(dim=1), roi_ry
+        # ).squeeze(dim=1)
+        # batch_box_preds[:, 0:3] += roi_xyz
+        # batch_box_preds = batch_box_preds.view(batch_size, -1, code_size)
+
+        roi_rot = rois[:, :, 6:9].view(-1, 3)
         roi_xyz = rois[:, :, 0:3].view(-1, 3)
         local_rois = rois.clone().detach()
         local_rois[:, :, 0:3] = 0
 
         batch_box_preds = self.box_coder.decode_torch(batch_box_preds, local_rois).view(-1, code_size)
 
-        batch_box_preds = common_utils.rotate_points_along_z(
-            batch_box_preds.unsqueeze(dim=1), roi_ry
+        batch_box_preds = common_utils.rotate_points(
+            batch_box_preds.unsqueeze(dim=1), roi_rot
         ).squeeze(dim=1)
         batch_box_preds[:, 0:3] += roi_xyz
         batch_box_preds = batch_box_preds.view(batch_size, -1, code_size)

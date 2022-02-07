@@ -48,11 +48,48 @@ def rotate_points_along_z(points, angle):
     zeros = angle.new_zeros(points.shape[0])
     ones = angle.new_ones(points.shape[0])
     rot_matrix = torch.stack((
-        cosa,  sina, zeros,
+        cosa, sina, zeros,
         -sina, cosa, zeros,
         zeros, zeros, ones
     ), dim=1).view(-1, 3, 3).float()
     points_rot = torch.matmul(points[:, :, 0:3], rot_matrix)
+    points_rot = torch.cat((points_rot, points[:, :, 3:]), dim=-1)
+    return points_rot.numpy() if is_numpy else points_rot
+
+
+def rotate_points(points, angle):
+    """
+    Args:
+        points: (B, N, 3 + C)
+        angle: (B), [B,3:yaw,pitch,row]
+    Returns:
+
+    """
+    points, is_numpy = check_numpy_to_torch(points)
+    angle, _ = check_numpy_to_torch(angle)
+
+    cosa = torch.cos(angle)  # (n,3[y,p,r])
+    sina = torch.sin(angle)  # (n,3[y,p,r])
+    zeros = angle.new_zeros(points.shape[0])
+    ones = angle.new_ones(points.shape[0])
+
+    rot_z_matrix = torch.stack((
+        cosa[:, 0], -sina[:, 0], zeros,
+        sina[:, 0], cosa[:, 0], zeros,
+        zeros, zeros, ones
+    ), dim=1).view(-1, 3, 3).float()
+    rot_y_matrix = torch.stack((
+        cosa[:, 1], zeros, sina[:, 1],
+        zeros, ones, zeros,
+        -sina[:, 1], zeros, cosa[:, 1]
+    ), dim=1).view(-1, 3, 3).float()
+    rot_x_matrix = torch.stack((
+        ones, zeros, zeros,
+        zeros, cosa[:, 2], -sina[:, 2],
+        zeros, sina[:, 2], cosa[:, 2]
+    ), dim=1).view(-1, 3, 3).float()
+    rot_matrix = torch.matmul(torch.matmul(rot_z_matrix, rot_y_matrix), rot_x_matrix)
+    points_rot = torch.matmul(points[:, :, 0:3], torch.inverse(rot_matrix))
     points_rot = torch.cat((points_rot, points[:, :, 3:]), dim=-1)
     return points_rot.numpy() if is_numpy else points_rot
 
@@ -249,6 +286,7 @@ def sa_create(name, var):
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
+
     def __init__(self):
         self.reset()
 

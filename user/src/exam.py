@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch as t
-
+from scipy.spatial.transform.rotation import Rotation
 
 # from scipy.spatial import Delaunay
 # import matplotlib.pyplot as plt
@@ -37,36 +37,18 @@ import torch as t
 # a = [1, 2, 3]
 # c = [0]
 # print(c + a)
-import torch
 
-def count_parameters(model):
-    """Count the number of parameters in a model."""
-    return sum([p.numel() for p in model.parameters()])
 
-conv = torch.nn.Conv1d(8,32,1)
-print(count_parameters(conv))
-# 288
+from pcdet.utils.common_utils import rotate_points, rotate_points_along_z
 
-linear = torch.nn.Linear(8,32)
-print(count_parameters(linear))
-# 288
-
-print(conv.weight.shape)
-# torch.Size([32, 8, 1])
-print(linear.weight.shape)
-# torch.Size([32, 8])
-
-# use same initialization
-linear.weight = torch.nn.Parameter(conv.weight.squeeze(2))
-linear.bias = torch.nn.Parameter(conv.bias)
-
-tensor = torch.randn(128,256,8)
-permuted_tensor = tensor.permute(0,2,1).clone().contiguous()	# 注意此处进行了维度重新排列
-
-out_linear = linear(tensor)
-print(out_linear.mean())
-# tensor(0.0067, grad_fn=<MeanBackward0>)
-
-out_conv = conv(permuted_tensor)
-print(out_conv.mean())
-# tensor(0.0067, grad_fn=<MeanBackward0>)
+n = 10
+point = np.random.random(3 * n).reshape(-1, 3) * 10
+angle = np.random.random(n).reshape(-1)
+print(point)
+print(angle)
+r1 = rotate_points_along_z(point.reshape(-1, 1, 3), angle)
+full_angle = np.hstack((angle[:, None], np.zeros_like(angle)[:, None], np.zeros_like(angle)[:, None]))
+print(full_angle)
+r2 = rotate_points(point.reshape(-1, 1, 3), full_angle)
+print(r1)
+print(r2)
